@@ -5,6 +5,8 @@ from dataclasses import asdict
 import io
 import json
 import os
+import subprocess
+import sys
 from llm import (
     Attachment,
     AsyncConversation,
@@ -24,6 +26,7 @@ from llm import (
     get_embedding_models_with_aliases,
     get_embedding_model_aliases,
     get_embedding_model,
+    get_fallback_model,
     get_plugins,
     get_fragment_loaders,
     get_template_loaders,
@@ -755,14 +758,83 @@ def prompt(
                 print(text)
     # List of exceptions that should never be raised in pytest:
     except (ValueError, NotImplementedError) as ex:
+        import ipdb
+
+        ipdb.set_trace()
         raise click.ClickException(str(ex))
     except Exception as ex:
         # All other exceptions should raise in pytest, show to user otherwise
-        if getattr(sys, "_called_from_test", False) or os.environ.get(
-            "LLM_RAISE_ERRORS", None
-        ):
+        import ipdb
+
+        ipdb.set_trace()
+        if getattr(sys, "_called_from_test", False) or os.environ.get("LLM_RAISE_ERRORS", None):
             raise
-        raise click.ClickException(str(ex))
+        click.echo(f"Error with model {model_id}: {str(ex)}", err=True)
+        fallback_model = get_fallback_model(model_id)
+        if not fallback_model:
+            raise click.ClickException(str(ex))
+        click.echo(f"Falling back to {fallback_model}...", err=True)
+
+        cmd_args = ["llm"]
+
+        # Add all original arguments except model_id
+        if prompt:
+            cmd_args.append(prompt)
+        if system:
+            cmd_args.extend(["-s", system])
+        cmd_args.extend(["-m", fallback_model])
+        if database:
+            cmd_args.extend(["-d", database])
+        for q in queries:
+            cmd_args.extend(["-q", q])
+        for a in attachments:
+            if a.path:
+                cmd_args.extend(["-a", a.path])
+            elif a.url:
+                cmd_args.extend(["-a", a.url])
+        # Include attachment_types
+        for a in attachment_types:
+            if a.path:
+                cmd_args.extend(["--at", a.path, a.type])
+            elif a.url:
+                cmd_args.extend(["--at", a.url, a.type])
+        for key, value in options:
+            cmd_args.extend(["-o", key, value])
+        if schema_input:
+            cmd_args.extend(["--schema", schema_input])
+        if schema_multi:
+            cmd_args.extend(["--schema-multi", schema_multi])
+        if template:
+            cmd_args.extend(["-t", template])
+        for k, v in param:
+            cmd_args.extend(["-p", k, v])
+        if no_stream:
+            cmd_args.append("--no-stream")
+        if no_log:
+            cmd_args.append("-n")
+        if log:
+            cmd_args.append("--log")
+        if _continue:
+            cmd_args.append("-c")
+        if conversation_id:
+            cmd_args.extend(["--cid", conversation_id])
+        if key:
+            cmd_args.extend(["--key", key])
+        if save:
+            cmd_args.extend(["--save", save])
+        if async_:
+            cmd_args.append("--async")
+        if usage:
+            cmd_args.append("-u")
+        if extract:
+            cmd_args.append("-x")
+        if extract_last:
+            cmd_args.append("--xl")
+
+        # Execute the fallback command
+        result = subprocess.run(cmd_args)
+        # Exit with the same exit code from the fallback command
+        sys.exit(result.returncode)
 
     if isinstance(response, AsyncResponse):
         response = asyncio.run(response.to_sync_response())

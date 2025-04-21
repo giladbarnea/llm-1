@@ -384,3 +384,30 @@ def get_default_embedding_model():
 
 def set_default_embedding_model(model):
     set_default_model(model, "default_embedding_model.txt")
+
+def get_fallback_model(of_model_id_or_alias) -> Optional[str]:
+    fallback_models = get_fallback_models()
+    import ipdb
+
+    ipdb.set_trace()
+    of_model_id = get_model(of_model_id_or_alias).model_id
+    fallback_model_ids = [get_model(f).model_id for f in fallback_models]
+    remaining_fallback_models: List[str] = fallback_model_ids[fallback_model_ids.index(of_model_id) + 1 :]
+    print(f"{of_model_id=}")
+    print(f"{fallback_model_ids=}")
+    print(f"{remaining_fallback_models=}")
+    print(f"{fallback_model_ids.index(of_model_id)=}")
+    for fallback_model_id in remaining_fallback_models:
+        try:
+            return get_model(fallback_model_id).model_id
+        except UnknownModelError:
+            pass
+    return None
+
+
+def get_fallback_models() -> List[str]:
+    path = user_dir() / "fallback_models.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    else:
+        return []
