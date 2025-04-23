@@ -29,6 +29,9 @@ import json
 import os
 import pathlib
 import struct
+import rich.traceback
+
+rich.traceback.install(extra_lines=7, show_locals=True, suppress=(".venv",))
 
 __all__ = [
     "AsyncConversation",
@@ -387,9 +390,18 @@ def set_default_embedding_model(model):
 
 def get_fallback_model(of_model_id_or_alias) -> Optional[str]:
     fallback_models = get_fallback_models()
-    import ipdb
+    import contextlib
+    import bdb
 
-    ipdb.set_trace()
+    debugged = False
+    with contextlib.suppress((bdb.BdbQuit, ModuleNotFoundError)):
+        import ipdb
+
+        ipdb.set_trace()
+        debugged = True
+    if not debugged:
+        with contextlib.suppress((bdb.BdbQuit, ModuleNotFoundError)):
+            breakpoint()
     of_model_id = get_model(of_model_id_or_alias).model_id
     fallback_model_ids = [get_model(f).model_id for f in fallback_models]
     remaining_fallback_models: List[str] = fallback_model_ids[fallback_model_ids.index(of_model_id) + 1 :]
